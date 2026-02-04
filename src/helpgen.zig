@@ -6,6 +6,7 @@ const std = @import("std");
 const Config = @import("config/Config.zig");
 const Action = @import("cli/ghostty.zig").Action;
 const KeybindAction = @import("input/Binding.zig").Action;
+const help_strings = @import("help_strings");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -43,6 +44,182 @@ fn genConfig(alloc: std.mem.Allocator, writer: *std.Io.Writer) !void {
     }
 
     try writer.writeAll("};\n");
+
+    // Generate metadata entry struct and runtime array
+    try genConfigMetadata(alloc, writer, ast);
+}
+
+/// Generates metadata around configuration
+fn genConfigMetadata(_: std.mem.Allocator, writer: *std.Io.Writer, _: std.zig.Ast) !void {
+    // Types used by the code gen
+    try writer.writeAll(
+        \\pub const FieldType = enum(c_int) {
+        \\   string,
+        \\   boolean,
+        \\   option,
+        \\};
+        \\
+        \\/// Configuration Metadata for rendering GUI Settings pages.
+        \\pub const ConfigMetadataEntry = extern struct {
+        \\   name: [*:0]const u8,
+        \\   field_type: FieldType,
+        \\   options: [*]const [*:0]const u8, // Pointer to null-terminated array of option strings, empty otherwise
+        \\   options_count: usize,
+        \\};
+        \\
+        \\/// Option strings for configuration fields that are enums.
+        \\
+    );
+
+    inline for (@typeInfo(Config).@"struct".fields) |field| {
+        if (field.name[0] == '_') continue;
+
+        // Generates enum options array for exposing a configs options via C api
+        const base = unwrapOptional(field.type);
+        if (@typeInfo(base) == .@"enum") {
+            try writer.writeAll("pub const ");
+            // TODO: We duplicate this... not the best
+            var sanitised_name: [field.name.len]u8 = undefined;
+            for (field.name, 0..) |c, i| {
+                sanitised_name[i] = if (c == '-') '_' else c;
+            }
+            try writer.writeAll(&sanitised_name);
+            try writer.writeAll("_options = [_][*:0]const u8{ ");
+            try genEnumOptions(base, writer);
+            try writer.writeAll("};\n");
+        }
+    }
+
+    try writer.writeAll(
+        \\
+        \\/// Runtime array of all config metadata entries
+        \\pub const config_metadata_entries = [_]ConfigMetadataEntry{
+        \\
+    );
+
+    // Generates the config metadata list for all fields
+    inline for (@typeInfo(Config).@"struct".fields) |field| {
+        if (field.name[0] == '_') continue;
+        const field_type = getFieldType(field.type);
+        const base = unwrapOptional(field.type);
+        const is_enum = @typeInfo(base) == .@"enum";
+
+        try writer.writeAll("    .{ .name = \"");
+        try writer.writeAll(field.name);
+        try writer.writeAll("\", .field_type = .");
+        try writer.writeAll(@tagName(field_type));
+        try writer.writeAll(", .options = ");
+
+        if (is_enum) {
+            try writer.writeAll("&");
+            // TODO: Fix the duplication
+            var sanitised_name: [field.name.len]u8 = undefined;
+            for (field.name, 0..) |c, i| {
+                sanitised_name[i] = if (c == '-') '_' else c;
+            }
+            try writer.writeAll(&sanitised_name);
+            try writer.writeAll("_options");
+        } else {
+            try writer.writeAll("&.{}");
+        }
+
+        try writer.writeAll(", .options_count = ");
+        if (is_enum) {
+            const enum_info = @typeInfo(base).@"enum";
+            try writer.print("{}", .{enum_info.fields.len});
+        } else {
+            try writer.writeAll("0");
+        }
+
+        try writer.writeAll(" },\n");
+    }
+
+    try writer.writeAll("};\n");
+}
+
+fn genEnumOptions(comptime T: type, wrtier: *std.Io.Writer) !void {
+    const info = @typeInfo(T).@"enum";
+
+    inline for (info.fields) |field| {
+        try wrtier.writeAll("\"");
+        try wrtier.writeAll(field.name);
+        try wrtier.writeAll("\", ");
+    }
+}
+
+pub const FieldType = enum(c_int) {
+    string,
+    boolean,
+    option,
+};
+
+pub const ConfigMetadataEntry = extern struct {
+    name: [*:0]const u8,
+    field_type: FieldType,
+    options: [*]const [*:0]const u8,
+    options_count: usize,
+};
+
+fn getFieldType(comptime T: type) FieldType {
+    const base = unwrapOptional(T);
+    // TODO:  @"cursor-style-blink": ?bool = null,
+    // Probably need to be smarter about this when null actually means something....
+
+    if (base == bool) return .boolean;
+
+    if (@typeInfo(base) == .@"enum") return .option;
+
+    return .string;
+}
+
+fn unwrapOptional(comptime T: type) type {
+    switch (@typeInfo(T)) {
+        .optional => |opt| return opt.child,
+        else => return T,
+    }
+}
+
+/// Generate a single metadata entry for the array
+fn genConfigMetadataEntry(
+    alloc: std.mem.Allocator,
+    writer: *std.Io.Writer,
+    ast: std.zig.Ast,
+    comptime field_name: []const u8,
+) !void {
+    const tokens = ast.tokens.items(.tag);
+    var default_value: []const u8 = "";
+
+    // Extract default value from AST
+    for (tokens, 0..) |token, i| {
+        if (token != .identifier) continue;
+        if (i == 0 or tokens[i - 1] != .doc_comment) continue;
+
+        const name = ast.tokenSlice(@intCast(i));
+        const key = if (name[0] == '@') name[2 .. name.len - 1] else name;
+        if (!std.mem.eql(u8, key, field_name)) continue;
+
+        // Extract default value: find "=" and read until ","
+        if (i + 1 < tokens.len and tokens[i + 1] == .colon) {
+            var j = i + 2;
+            while (j < tokens.len and tokens[j] != .equal) : (j += 1) {}
+            if (j < tokens.len) {
+                var k = j + 1;
+                while (k < tokens.len and tokens[k] != .comma) : (k += 1) {}
+
+                var default_buf: std.ArrayList(u8) = .empty;
+                defer default_buf.deinit(alloc);
+                for (j + 2..k) |idx| {
+                    try default_buf.appendSlice(alloc, ast.tokenSlice(@intCast(idx)));
+                }
+                default_value = try alloc.dupe(u8, std.mem.trim(u8, default_buf.items, " \t\n\r"));
+            }
+        }
+        break;
+    }
+
+    try writer.writeAll("    .{ .name = \"");
+    try writer.writeAll(field_name);
+    try writer.writeAll("\" },\n");
 }
 
 fn genConfigField(

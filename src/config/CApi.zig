@@ -6,6 +6,7 @@ const c = @import("../main_c.zig");
 const Config = @import("Config.zig");
 const c_get = @import("c_get.zig");
 const edit = @import("edit.zig");
+const formatter = @import("formatter.zig");
 const Key = @import("key.zig").Key;
 
 const log = std.log.scoped(.config);
@@ -56,6 +57,14 @@ export fn ghostty_config_load_cli_args(self: *Config) void {
     };
 }
 
+/// Load the configuration from a given string
+/// TODO: note the format exactly
+export fn ghostty_config_load_string(self: *Config, str: [*]const u8, len: usize) void {
+    self.loadString(state.alloc, str[0..len]) catch |err| {
+        log.err("error loading config err={}", .{err});
+    };
+}
+
 /// Load the configuration from the default file locations. This
 /// is usually done first. The default file locations are locations
 /// such as the home directory.
@@ -98,6 +107,69 @@ export fn ghostty_config_get(
     @setEvalBranchQuota(10_000);
     const key = std.meta.stringToEnum(Key, key_str[0..len]) orelse return false;
     return c_get.get(self, key, ptr);
+}
+
+/// Get the string representation of a config value by key.
+/// This uses the formatter to convert any config value to its string form,
+/// which is the same format used in config files.
+/// Returns null if the key is invalid.
+/// The returned string is allocated and must be freed by the caller using ghostty_config_free_string.
+export fn ghostty_config_get_string(
+    self: *Config,
+    key_str: [*]const u8,
+    len: usize,
+) ?[*:0]const u8 {
+    @setEvalBranchQuota(100_000);
+    const key = std.meta.stringToEnum(Key, key_str[0..len]) orelse return null;
+    return getFormattedString(self, key);
+}
+
+/// Free a string returned by ghostty_config_get_string
+export fn ghostty_config_free_string(str: ?[*:0]const u8) void {
+    if (str) |s| {
+        const slice_ptr: [*]const u8 = @ptrCast(s);
+        const strlen = std.mem.len(s);
+        state.alloc.free(slice_ptr[0 .. strlen + 1]);
+    }
+}
+
+fn getFormattedString(config: *const Config, key: Key) ?[*:0]const u8 {
+    @setEvalBranchQuota(100_000);
+    switch (key) {
+        inline else => |k| {
+            const value = c_get.fieldByKey(config, k);
+            return formatValueToString(value) catch |err| {
+                log.err("error formatting config value err={}", .{err});
+                return null;
+            };
+        },
+    }
+}
+
+fn formatValueToString(value: anytype) !?[*:0]const u8 {
+    const T = @TypeOf(value);
+
+    var buf: std.Io.Writer.Allocating = .init(state.alloc);
+    errdefer buf.deinit();
+
+    // Dummy name - we only need to get the 'formatted' value
+    try formatter.formatEntry(T, "_", value, &buf.writer);
+
+    const written = buf.written();
+    if (written.len == 0) return null;
+
+    const value_start = 4;
+    const value_end = written.len - 1;
+    if (value_end <= value_start) return null;
+
+    const value_str = written[value_start..value_end];
+
+    const result = try state.alloc.allocSentinel(u8, value_str.len, 0);
+    @memcpy(result, value_str);
+
+    buf.deinit();
+
+    return result.ptr;
 }
 
 export fn ghostty_config_trigger(
@@ -144,3 +216,51 @@ export fn ghostty_config_open_path() c.String {
 const Diagnostic = extern struct {
     message: [*:0]const u8 = "",
 };
+
+// ============================================================================
+// Config Metadata C API
+// ============================================================================
+
+const help_strings = @import("help_strings");
+
+/// Returns the number of config metadata entries
+export fn ghostty_config_metadata_count() usize {
+    return help_strings.config_metadata_entries.len;
+}
+
+/// Returns the metadata entry at the given index, or null if out of bounds
+export fn ghostty_config_metadata_get(index: usize) ?*const help_strings.ConfigMetadataEntry {
+    if (index >= help_strings.config_metadata_entries.len) return null;
+    return &help_strings.config_metadata_entries[index];
+}
+
+test "config_metadata: count and get" {
+    const count = ghostty_config_metadata_count();
+    // Should have many config entries
+    try std.testing.expect(count > 100);
+
+    // First entry should be font-family
+    const first = ghostty_config_metadata_get(0);
+    try std.testing.expect(first != null);
+    try std.testing.expectEqualStrings("font-family", std.mem.span(first.?.name));
+
+    // Out of bounds returns null
+    const invalid = ghostty_config_metadata_get(count + 100);
+    try std.testing.expect(invalid == null);
+}
+
+test "config_metadata: print first 5" {
+    const count = ghostty_config_metadata_count();
+    const to_print = @min(count, 5);
+
+    std.debug.print("\n=== Config Metadata Test ===\n", .{});
+    std.debug.print("Total entries: {}\n\n", .{count});
+
+    for (0..to_print) |i| {
+        const entry = ghostty_config_metadata_get(i);
+        if (entry) |e| {
+            std.debug.print("[{}] {s}\n", .{ i, std.mem.span(e.name) });
+            std.debug.print("    default: \"{s}\"\n\n", .{std.mem.span(e.default_value)});
+        }
+    }
+}

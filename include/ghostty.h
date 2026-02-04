@@ -372,6 +372,19 @@ typedef struct {
   const char* message;
 } ghostty_diagnostic_s;
 
+typedef enum {
+  GHOSTTY_FIELD_TYPE_STRING,
+  GHOSTTY_FIELD_TYPE_BOOLEAN,
+  GHOSTTY_FIELD_TYPE_OPTION,
+} ghostty_field_type_e;
+
+typedef struct {
+  const char* name;
+  ghostty_field_type_e field_type;
+  const char** options;
+  size_t options_count;
+} ghostty_config_metadata_entry_s;
+
 typedef struct {
   const char* ptr;
   uintptr_t len;
@@ -1026,15 +1039,23 @@ ghostty_config_t ghostty_config_clone(ghostty_config_t);
 void ghostty_config_load_cli_args(ghostty_config_t);
 void ghostty_config_load_file(ghostty_config_t, const char*);
 void ghostty_config_load_default_files(ghostty_config_t);
+void ghostty_config_load_string(ghostty_config_t,
+                                const char* str,
+                                uintptr_t len);
+
 void ghostty_config_load_recursive_files(ghostty_config_t);
 void ghostty_config_finalize(ghostty_config_t);
 bool ghostty_config_get(ghostty_config_t, void*, const char*, uintptr_t);
+const char* ghostty_config_get_string(ghostty_config_t, const char*, uintptr_t);
+void ghostty_config_free_string(const char*);
 ghostty_input_trigger_s ghostty_config_trigger(ghostty_config_t,
                                                const char*,
                                                uintptr_t);
 uint32_t ghostty_config_diagnostics_count(ghostty_config_t);
 ghostty_diagnostic_s ghostty_config_get_diagnostic(ghostty_config_t, uint32_t);
 ghostty_string_s ghostty_config_open_path(void);
+uintptr_t ghostty_config_metadata_count(void);
+const ghostty_config_metadata_entry_s* ghostty_config_metadata_get(uintptr_t);
 
 ghostty_app_t ghostty_app_new(const ghostty_runtime_config_s*,
                               ghostty_config_t);

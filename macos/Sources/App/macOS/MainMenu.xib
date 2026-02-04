@@ -92,7 +92,14 @@
                                 </connections>
                             </menuItem>
                             <menuItem isSeparatorItem="YES" id="VOq-y0-SEH"/>
-                            <menuItem title="Preferences…" keyEquivalent="," id="BOF-NM-1cW">
+                            <!-- TODO: Decide what we should do about this, text vs gui default -->
+                            <menuItem title="GUI Settings" keyEquivalent="," id="GUI-set-001">
+                                <modifierMask key="keyEquivalentModifierMask"/>
+                                <connections>
+                                    <action selector="showGUISettings:" target="bbz-4X-AYv" id="GUI-set-act"/>
+                                </connections>
+                            </menuItem>
+                            <menuItem title="Preferences…" id="BOF-NM-1cW">
                                 <connections>
                                     <action selector="openConfig:" target="bbz-4X-AYv" id="X65-fg-iWU"/>
                                 </connections>

@@ -4025,6 +4025,15 @@ pub fn loadCliArgs(self: *Config, alloc_gpa: Allocator) !void {
     try self.expandPaths(try std.fs.cwd().realpath(".", &buf));
 }
 
+/// Load and parse the configuration from a given string.
+/// Unlike loadFile/loadReader, this does not expand relative paths since
+/// there is no file context to resolve them against.
+pub fn loadString(self: *Config, alloc: Allocator, str: []const u8) !void {
+    var reader: std.Io.Reader = .fixed(str);
+    var iter: cli.args.LineIterator = .{ .r = &reader, .filepath = "" };
+    try self.loadIter(alloc, &iter);
+}
+
 /// Load and parse the config files that were added in the "config-file" key.
 pub fn loadRecursiveFiles(self: *Config, alloc_gpa: Allocator) !void {
     if (self.@"config-file".value.items.len == 0) return;

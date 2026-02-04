@@ -1155,6 +1155,10 @@ class AppDelegate: NSObject,
         AboutController.shared.show()
     }
 
+    @IBAction func showGUISettings(_ sender: Any?) {
+        GUISettingsController.shared.show()
+    }
+
     @IBAction func showHelp(_ sender: Any) {
         guard let url = URL(string: "https://ghostty.org/docs") else { return }
         NSWorkspace.shared.open(url)

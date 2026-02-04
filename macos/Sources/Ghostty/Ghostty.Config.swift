@@ -64,10 +64,25 @@ extension Ghostty {
             // We only do this on macOS because other Apple platforms do not have the
             // same filesystem concept.
 #if os(macOS)
-            if let path {
-                ghostty_config_load_file(cfg, path)
+
+            // TODO: Need to come up with a way to handle this
+            // only supporting GUI preferences for now.....
+            // if let path {
+            //     ghostty_config_load_file(cfg, path)
+            // } else {
+            //     ghostty_config_load_default_files(cfg)
+            // }
+            // ghostty_config_load_default_files(cfg)
+
+            // Loads GUI config opts from UserDefaults.
+            // They are loaded after config files so GUI overrides take priority over
+            // file-based config, but before CLI args so CLI args win over everything.
+            let cfgStr = SettingsStore.shared.buildConfigString()
+            if !cfgStr.isEmpty {
+                let cfgStrLen = UInt(cfgStr.lengthOfBytes(using: .utf8))
+                ghostty_config_load_string(cfg, cfgStr, cfgStrLen)
             } else {
-                ghostty_config_load_default_files(cfg)
+                print("No config string to load (empty NSUserDefaults)")
             }
 
             // We only load CLI args when not running in Xcode because in Xcode we

@@ -1,0 +1,42 @@
+import Foundation
+import Cocoa
+import SwiftUI
+import GhosttyKit
+
+class GUISettingsController: NSWindowController, NSWindowDelegate {
+    static let shared: GUISettingsController = GUISettingsController()
+
+    override var windowNibName: NSNib.Name? { "GUISettings" }
+
+    override func windowDidLoad() {
+        guard let window = window else { return }
+        window.center()
+        window.title = "GUI Settings"
+        window.contentView = NSHostingView(rootView: GUISettingsView())
+    }
+
+    // MARK: - Functions
+
+    func show() {
+        window?.makeKeyAndOrderFront(nil)
+    }
+
+    func hide() {
+        window?.close()
+    }
+
+    // MARK: - First Responder
+
+    @IBAction func close(_ sender: Any) {
+        self.window?.performClose(sender)
+    }
+
+    @IBAction func closeWindow(_ sender: Any) {
+        self.window?.performClose(sender)
+    }
+
+    // This is called when "escape" is pressed.
+    @objc func cancel(_ sender: Any?) {
+        close()
+    }
+}
