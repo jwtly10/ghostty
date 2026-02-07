@@ -80,7 +80,7 @@ fn genConfigMetadata(alloc: std.mem.Allocator, writer: *std.Io.Writer, ast: std.
         const base = unwrapOptional(field.type);
         if (@typeInfo(base) == .@"enum") {
             try writer.writeAll("pub const ");
-            // TODO: We duplicate this... not the best
+            // TODO: JW: We duplicate this... not the best
             var sanitised_name: [field.name.len]u8 = undefined;
             for (field.name, 0..) |c, i| {
                 sanitised_name[i] = if (c == '-') '_' else c;
@@ -146,7 +146,7 @@ fn genConfigMetadata(alloc: std.mem.Allocator, writer: *std.Io.Writer, ast: std.
         try writer.writeAll(", .options = ");
         if (is_enum) {
             try writer.writeAll("&");
-            // TODO: Fix the duplication
+            // TODO: JW: Fix the duplication
             var sanitised_name: [field.name.len]u8 = undefined;
             for (field.name, 0..) |c, i| {
                 sanitised_name[i] = if (c == '-') '_' else c;
@@ -199,7 +199,7 @@ pub const ConfigMetadataEntry = extern struct {
 
 fn getFieldType(comptime T: type) FieldType {
     const base = unwrapOptional(T);
-    // TODO:  @"cursor-style-blink": ?bool = null,
+    // TODO: JW: @"cursor-style-blink": ?bool = null,
     // Probably need to be smarter about this when null actually means something....
 
     if (base == bool) return .boolean;
@@ -434,7 +434,7 @@ fn extractDocComments(
         if (token != .doc_comment) break;
 
         // Removes @category lines from doc comments
-        // TODO: sets this a flag so we can ignore the output of this..
+        // TODO: JW: sets this a flag so we can ignore the output of this..
         // but we shouldn't be processing this anyway
         const raw = ast.tokenSlice(@intCast(i))[3..];
         const trimmed = std.mem.trimLeft(u8, raw, " ");

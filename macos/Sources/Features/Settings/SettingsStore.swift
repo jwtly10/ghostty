@@ -6,7 +6,7 @@ class SettingsStore {
     static let shared = SettingsStore()
 
     /// The UserDefaults domain prefix for all GUI settings keys.
-    // TODO: Could support more granular grouping?
+    // TODO: JW: Could support more granular grouping?
     private static let keyPrefix = "ghostty."
 
     private let defaults = UserDefaults.standard
@@ -41,7 +41,7 @@ class SettingsStore {
 
     // MARK: - Write
 
-    /// Saves a configuration option 
+    /// Saves a configuration option
     func save(_ key: String, value: String) {
         defaults.set(value, forKey: Self.keyPrefix + key)
     }
@@ -64,7 +64,7 @@ class SettingsStore {
 
     // MARK: - Config Loading
 
-    /// Builds a formatted string from stored configuration 
+    /// Builds a formatted string from stored configuration
     ///
     /// Example output:
     /// ```
@@ -99,7 +99,9 @@ class SettingsStore {
         from config: ghostty_config_t,
         key: String
     ) -> String {
-        guard let cStr = ghostty_config_get_string(config, key, UInt(key.lengthOfBytes(using: .utf8))) else {
+        guard
+            let cStr = ghostty_config_get_string(config, key, UInt(key.lengthOfBytes(using: .utf8)))
+        else {
             return ""
         }
         let result = String(cString: cStr)
