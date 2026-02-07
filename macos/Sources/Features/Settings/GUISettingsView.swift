@@ -1,6 +1,6 @@
-import SwiftUI
 import Combine
 import GhosttyKit
+import SwiftUI
 
 enum ConfigFieldType: Int {
     case string = 0
@@ -31,7 +31,8 @@ class ConfigMetadataViewModel: ObservableObject {
     @Published private(set) var itemsByCategory: [String: [ConfigMetadataItem]] = [:]
 
     /// Cached search results grouped by category, rebuilt on debounced search text changes.
-    @Published private(set) var searchResultsByCategory: [(category: String, items: [ConfigMetadataItem])] = []
+    @Published private(set) var searchResultsByCategory:
+        [(category: String, items: [ConfigMetadataItem])] = []
 
     private var searchCancellable: AnyCancellable?
 
@@ -49,11 +50,12 @@ class ConfigMetadataViewModel: ObservableObject {
 
         let present = Set(grouped.keys)
 
-        // These are some categories we expect are present, 
+        // These are some categories we expect are present,
         // so just ranking in a more ergonomic order
         let knownOrder = [
-            "General", "Font", "Colors", "Cursor",
-            "Mouse", "Keyboard", "Clipboard", "Window", "Terminal",
+            "General", "Font", "Colors", "Cursor", "Mouse", "Keyboard",
+            "Clipboard", "Window", "Split", "Tab", "Terminal", "Shell",
+            "Appearance", "Desktop", "OS", "Linux",
         ]
         var result = knownOrder.filter { present.contains($0) }
         let extras = present.subtracting(knownOrder).sorted()
@@ -68,13 +70,14 @@ class ConfigMetadataViewModel: ObservableObject {
         }
         let query = searchText
         let filtered = items.filter {
-            $0.name.localizedCaseInsensitiveContains(query) ||
-            $0.description.localizedCaseInsensitiveContains(query)
+            $0.name.localizedCaseInsensitiveContains(query)
+                || $0.description.localizedCaseInsensitiveContains(query)
         }
         let grouped = Dictionary(grouping: filtered) {
             $0.category.isEmpty ? "General" : $0.category
         }
-        searchResultsByCategory = categories
+        searchResultsByCategory =
+            categories
             .filter { grouped[$0] != nil }
             .map { (category: $0, items: grouped[$0]!) }
     }
@@ -91,7 +94,8 @@ class ConfigMetadataViewModel: ObservableObject {
         NotificationCenter.default.addObserver(
             self, selector: #selector(onConfigDidChange(_:)),
             name: .ghosttyConfigDidChange, object: nil)
-        searchCancellable = $searchText
+        searchCancellable =
+            $searchText
             .debounce(for: .milliseconds(100), scheduler: RunLoop.main)
             .sink { [weak self] _ in self?.rebuildSearchResults() }
     }
@@ -114,7 +118,8 @@ class ConfigMetadataViewModel: ObservableObject {
         for i in 0..<count {
             guard let entry = ghostty_config_metadata_get(i) else { continue }
             let name = String(cString: entry.pointee.name)
-            let fieldType = ConfigFieldType(rawValue: Int(entry.pointee.field_type.rawValue)) ?? .string
+            let fieldType =
+                ConfigFieldType(rawValue: Int(entry.pointee.field_type.rawValue)) ?? .string
             let description = entry.pointee.description.map(String.init(cString:)) ?? ""
             let category = entry.pointee.category.map(String.init(cString:)) ?? ""
 
@@ -127,10 +132,11 @@ class ConfigMetadataViewModel: ObservableObject {
                 }
             }
 
-            loadedItems.append(ConfigMetadataItem(
-                id: Int(i), name: name, fieldType: fieldType,
-                description: description, category: category, options: options
-            ))
+            loadedItems.append(
+                ConfigMetadataItem(
+                    id: Int(i), name: name, fieldType: fieldType,
+                    description: description, category: category, options: options
+                ))
         }
 
         self.items = loadedItems
@@ -219,15 +225,22 @@ private struct CategoryInfo {
 }
 
 private let categoryMeta: [String: CategoryInfo] = [
-    "General":   CategoryInfo(icon: "gearshape",           color: Color(.systemGray)),
-    "Font":      CategoryInfo(icon: "textformat.size",     color: .blue),
-    "Colors":    CategoryInfo(icon: "paintpalette.fill",   color: .pink),
-    "Cursor":    CategoryInfo(icon: "cursorarrow",         color: .purple),
-    "Mouse":     CategoryInfo(icon: "computermouse.fill",  color: .orange),
-    "Window":    CategoryInfo(icon: "macwindow",           color: .teal),
-    "Keyboard":  CategoryInfo(icon: "keyboard",            color: .indigo),
-    "Clipboard": CategoryInfo(icon: "doc.on.clipboard",    color: .green),
-    "Terminal":  CategoryInfo(icon: "terminal",             color: .gray),
+    "General": CategoryInfo(icon: "gearshape", color: Color(.systemGray)),
+    "Font": CategoryInfo(icon: "textformat.size", color: .blue),
+    "Colors": CategoryInfo(icon: "paintpalette.fill", color: .pink),
+    "Cursor": CategoryInfo(icon: "cursorarrow", color: .purple),
+    "Mouse": CategoryInfo(icon: "computermouse.fill", color: .orange),
+    "Keyboard": CategoryInfo(icon: "keyboard", color: .indigo),
+    "Clipboard": CategoryInfo(icon: "doc.on.clipboard", color: .green),
+    "Window": CategoryInfo(icon: "macwindow", color: .teal),
+    "Split": CategoryInfo(icon: "rectangle.split.2x1", color: .brown),
+    "Tab": CategoryInfo(icon: "square.on.square", color: .mint),
+    "Terminal": CategoryInfo(icon: "terminal", color: .gray),
+    "Shell": CategoryInfo(icon: "chevron.left.forwardslash.chevron.right", color: .red),
+    "Appearance": CategoryInfo(icon: "sparkles", color: .cyan),
+    "Desktop": CategoryInfo(icon: "menubar.dock.rectangle", color: .yellow),
+    "OS": CategoryInfo(icon: "desktopcomputer", color: .brown),
+    "Linux": CategoryInfo(icon: "server.rack", color: .mint),
 ]
 
 // MARK: - Main View
