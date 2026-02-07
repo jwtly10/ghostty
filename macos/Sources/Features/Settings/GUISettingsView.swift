@@ -1,82 +1,111 @@
 import SwiftUI
+import Combine
 import GhosttyKit
 
-/// Field type for config options
 enum ConfigFieldType: Int {
     case string = 0
     case boolean = 1
     case option = 2
 }
 
-/// A single config metadata entry
-struct ConfigMetadataItem: Identifiable {
+struct ConfigMetadataItem: Identifiable, Equatable {
     let id: Int
     let name: String
     let fieldType: ConfigFieldType
+    let description: String
+    let category: String
     let options: [String]
 }
 
-/// View model that loads config metadata from the C API and persists changes
-/// through ``SettingsStore``. Changes are staged locally and only applied
-/// when the user clicks "Apply".
 class ConfigMetadataViewModel: ObservableObject {
     @Published var items: [ConfigMetadataItem] = []
     @Published var searchText: String = ""
     @Published var values: [String: String] = [:]
     @Published var errors: [String] = []
+    @Published var selectedCategory: String? = nil
 
-    /// Tracks which keys the user has modified in this session so we can
-    /// visually distinguish overridden values.
     @Published var modifiedKeys: Set<String> = []
-
-    /// Tracks keys that have been changed but not yet applied.
     @Published var pendingChanges: Set<String> = []
 
-    var filteredItems: [ConfigMetadataItem] {
-        if searchText.isEmpty {
-            return items
-        }
-        return items.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
+    @Published private(set) var categories: [String] = []
+    @Published private(set) var itemsByCategory: [String: [ConfigMetadataItem]] = [:]
+
+    /// Cached search results grouped by category, rebuilt on debounced search text changes.
+    @Published private(set) var searchResultsByCategory: [(category: String, items: [ConfigMetadataItem])] = []
+
+    private var searchCancellable: AnyCancellable?
+
+    func items(for category: String) -> [ConfigMetadataItem] {
+        itemsByCategory[category] ?? []
     }
 
-    /// Returns true if there are unsaved changes.
-    var hasUnsavedChanges: Bool {
-        !pendingChanges.isEmpty
+    var hasUnsavedChanges: Bool { !pendingChanges.isEmpty }
+
+    private func rebuildCategoryIndex() {
+        let grouped = Dictionary(grouping: items) {
+            $0.category.isEmpty ? "General" : $0.category
+        }
+        self.itemsByCategory = grouped
+
+        let present = Set(grouped.keys)
+
+        // These are some categories we expect are present, 
+        // so just ranking in a more ergonomic order
+        let knownOrder = [
+            "General", "Font", "Colors", "Cursor",
+            "Mouse", "Keyboard", "Clipboard", "Window", "Terminal",
+        ]
+        var result = knownOrder.filter { present.contains($0) }
+        let extras = present.subtracting(knownOrder).sorted()
+        result.append(contentsOf: extras)
+        self.categories = result
     }
+
+    private func rebuildSearchResults() {
+        guard !searchText.isEmpty else {
+            searchResultsByCategory = []
+            return
+        }
+        let query = searchText
+        let filtered = items.filter {
+            $0.name.localizedCaseInsensitiveContains(query) ||
+            $0.description.localizedCaseInsensitiveContains(query)
+        }
+        let grouped = Dictionary(grouping: filtered) {
+            $0.category.isEmpty ? "General" : $0.category
+        }
+        searchResultsByCategory = categories
+            .filter { grouped[$0] != nil }
+            .map { (category: $0, items: grouped[$0]!) }
+    }
+
+    // Flag to override how configuration errors are propagated to the user.
+    // Instead of showing a popup window, we show errors inline in the preferences panel.
+    static var isReloadingFromGUI = false
 
     private let store = SettingsStore.shared
-
-    /// True while we are applying changes, so we can ignore the
-    /// resulting config-did-change notification.
     private var isApplyingChanges = false
 
     init() {
         loadMetadata()
-
-        // Listen for external config reloads (menu bar, SIGUSR2, etc.)
-        // so we can refresh the displayed values.
         NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(onConfigDidChange(_:)),
-            name: .ghosttyConfigDidChange,
-            object: nil)
+            self, selector: #selector(onConfigDidChange(_:)),
+            name: .ghosttyConfigDidChange, object: nil)
+        searchCancellable = $searchText
+            .debounce(for: .milliseconds(100), scheduler: RunLoop.main)
+            .sink { [weak self] _ in self?.rebuildSearchResults() }
     }
 
-    deinit {
-        NotificationCenter.default.removeObserver(self)
-    }
+    deinit { NotificationCenter.default.removeObserver(self) }
 
     @objc private func onConfigDidChange(_ notification: Notification) {
-        // Only care about app-wide config changes
         guard notification.object == nil else { return }
-        // Don't reload if we triggered this change ourselves
         guard !isApplyingChanges else { return }
-        // Don't reload if we have pending changes - user might lose work
         guard pendingChanges.isEmpty else { return }
         loadCurrentValues()
     }
 
-    // MARK: - Loading
+    // MARK: - Initial loading of data
 
     func loadMetadata() {
         let count = ghostty_config_metadata_count()
@@ -84,50 +113,44 @@ class ConfigMetadataViewModel: ObservableObject {
 
         for i in 0..<count {
             guard let entry = ghostty_config_metadata_get(i) else { continue }
-
             let name = String(cString: entry.pointee.name)
             let fieldType = ConfigFieldType(rawValue: Int(entry.pointee.field_type.rawValue)) ?? .string
+            let description = entry.pointee.description.map(String.init(cString:)) ?? ""
+            let category = entry.pointee.category.map(String.init(cString:)) ?? ""
 
-            // Load options for enum types
             var options: [String] = []
             if fieldType == .option && entry.pointee.options_count > 0 {
                 for j in 0..<entry.pointee.options_count {
-                    if let optionPtr = entry.pointee.options[j] {
-                        options.append(String(cString: optionPtr))
+                    if let ptr = entry.pointee.options[j] {
+                        options.append(String(cString: ptr))
                     }
                 }
             }
 
             loadedItems.append(ConfigMetadataItem(
-                id: Int(i),
-                name: name,
-                fieldType: fieldType,
-                options: options
+                id: Int(i), name: name, fieldType: fieldType,
+                description: description, category: category, options: options
             ))
         }
 
         self.items = loadedItems
+        rebuildCategoryIndex()
         loadCurrentValues()
+        if selectedCategory == nil, let first = categories.first {
+            selectedCategory = first
+        }
     }
 
-    /// Reads the current value of every config key from the live config.
     func loadCurrentValues() {
         guard let delegate = NSApplication.shared.delegate as? AppDelegate else { return }
         guard let config = delegate.ghostty.config.config else { return }
 
         var loaded: [String: String] = [:]
         var modified: Set<String> = []
-
         for item in items {
-            // Read the effective value from the live config
             loaded[item.name] = SettingsStore.readValue(from: config, key: item.name)
-
-            // Track which keys have a GUI override
-            if store.isSet(item.name) {
-                modified.insert(item.name)
-            }
+            if store.isSet(item.name) { modified.insert(item.name) }
         }
-
         self.values = loaded
         self.modifiedKeys = modified
     }
@@ -139,25 +162,8 @@ class ConfigMetadataViewModel: ObservableObject {
             get: { self.values[name] ?? "" },
             set: { [weak self] newValue in
                 guard let self else { return }
-                // Only mark as pending if the value actually changed
-                let oldValue = self.values[name] ?? ""
-                guard newValue != oldValue else { return }
+                guard newValue != (self.values[name] ?? "") else { return }
                 self.values[name] = newValue
-                self.pendingChanges.insert(name)
-            }
-        )
-    }
-
-    func boolBinding(for name: String) -> Binding<Bool> {
-        Binding(
-            get: { self.values[name] == "true" },
-            set: { [weak self] newValue in
-                guard let self else { return }
-                let strValue = newValue ? "true" : "false"
-                // Only mark as pending if the value actually changed
-                let oldValue = self.values[name] ?? ""
-                guard strValue != oldValue else { return }
-                self.values[name] = strValue
                 self.pendingChanges.insert(name)
             }
         )
@@ -165,7 +171,6 @@ class ConfigMetadataViewModel: ObservableObject {
 
     // MARK: - Apply & Reset
 
-    /// Saves all pending changes to the store and triggers a config reload.
     func applyChanges() {
         for key in pendingChanges {
             if let value = values[key] {
@@ -174,122 +179,409 @@ class ConfigMetadataViewModel: ObservableObject {
             }
         }
         pendingChanges.removeAll()
-
         isApplyingChanges = true
         reloadConfig()
         isApplyingChanges = false
     }
 
-    /// Discards all pending changes and reverts to the current config values.
     func discardChanges() {
         pendingChanges.removeAll()
         loadCurrentValues()
     }
 
-    /// Removes a GUI override for a key, restoring the file/default value.
     func resetKey(_ key: String) {
         store.remove(key)
         modifiedKeys.remove(key)
         pendingChanges.remove(key)
-
         isApplyingChanges = true
         reloadConfig()
         isApplyingChanges = false
-
-        // After reload, re-read this key's effective value from the live config
         guard let delegate = NSApplication.shared.delegate as? AppDelegate else { return }
         guard let config = delegate.ghostty.config.config else { return }
         values[key] = SettingsStore.readValue(from: config, key: key)
     }
 
-    /// Triggers a full config reload through the app and captures any errors.
     private func reloadConfig() {
         guard let delegate = NSApplication.shared.delegate as? AppDelegate else { return }
+        Self.isReloadingFromGUI = true
         delegate.ghostty.reloadConfig()
-
-        // After reload, read back errors from the new config
+        Self.isReloadingFromGUI = false
         let configErrors = delegate.ghostty.config.errors
-        DispatchQueue.main.async {
-            self.errors = configErrors
-        }
+        DispatchQueue.main.async { self.errors = configErrors }
     }
 }
 
-// MARK: - Views
+// MARK: - Category Metadata
 
-/// Main GUI Settings view
+private struct CategoryInfo {
+    let icon: String
+    let color: Color
+}
+
+private let categoryMeta: [String: CategoryInfo] = [
+    "General":   CategoryInfo(icon: "gearshape",           color: Color(.systemGray)),
+    "Font":      CategoryInfo(icon: "textformat.size",     color: .blue),
+    "Colors":    CategoryInfo(icon: "paintpalette.fill",   color: .pink),
+    "Cursor":    CategoryInfo(icon: "cursorarrow",         color: .purple),
+    "Mouse":     CategoryInfo(icon: "computermouse.fill",  color: .orange),
+    "Window":    CategoryInfo(icon: "macwindow",           color: .teal),
+    "Keyboard":  CategoryInfo(icon: "keyboard",            color: .indigo),
+    "Clipboard": CategoryInfo(icon: "doc.on.clipboard",    color: .green),
+    "Terminal":  CategoryInfo(icon: "terminal",             color: .gray),
+]
+
+// MARK: - Main View
+
 struct GUISettingsView: View {
     @StateObject private var viewModel = ConfigMetadataViewModel()
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Inline error banner
-            if !viewModel.errors.isEmpty {
-                ConfigErrorBanner(errors: viewModel.errors)
-            }
+        HSplitView {
+            SidebarView(viewModel: viewModel)
+                .frame(minWidth: 180, idealWidth: 180, maxWidth: 280)
 
-            // Header with Apply/Discard buttons
-            HStack {
-                Text("Configuration Options")
-                    .font(.headline)
-                Spacer()
+            VStack(spacing: 0) {
+                DetailHeaderBar(viewModel: viewModel)
+                Divider()
 
-                if viewModel.hasUnsavedChanges {
-                    Text("\(viewModel.pendingChanges.count) unsaved")
-                        .font(.caption)
-                        .foregroundColor(.orange)
-
-                    Button("Discard") {
-                        viewModel.discardChanges()
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button("Apply") {
-                        viewModel.applyChanges()
-                    }
-                    .buttonStyle(.borderedProminent)
-                } else {
-                    Text("\(viewModel.filteredItems.count) of \(viewModel.items.count) options")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                if !viewModel.errors.isEmpty {
+                    ConfigErrorBanner(errors: viewModel.errors)
                 }
-            }
-            .padding()
 
-            // Search bar
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
-                TextField("Search options...", text: $viewModel.searchText)
-                    .textFieldStyle(.plain)
-                if !viewModel.searchText.isEmpty {
-                    Button(action: { viewModel.searchText = "" }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
+                DetailContentView(viewModel: viewModel)
             }
-            .padding(8)
-            .background(Color(NSColor.controlBackgroundColor))
-            .cornerRadius(8)
-            .padding(.horizontal)
-            .padding(.bottom, 8)
-
-            Divider()
-
-            // Config list
-            List(viewModel.filteredItems) { item in
-                ConfigItemRow(item: item, viewModel: viewModel)
-            }
-            .listStyle(.plain)
         }
-        .frame(minWidth: 600, minHeight: 500)
+        .frame(minWidth: 760, minHeight: 520)
     }
 }
 
-/// Inline error banner displayed at the top of the settings view when
-/// the most recent config reload produced diagnostics.
+// MARK: - Sidebar
+
+struct SidebarView: View {
+    @ObservedObject var viewModel: ConfigMetadataViewModel
+
+    var body: some View {
+        List(selection: $viewModel.selectedCategory) {
+            ForEach(viewModel.categories, id: \.self) { category in
+                let meta = categoryMeta[category] ?? CategoryInfo(icon: "gearshape", color: .gray)
+                let count = viewModel.itemsByCategory[category]?.count ?? 0
+
+                Label {
+                    HStack {
+                        Text(category)
+                        Spacer()
+                        Text("\(count)")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .monospacedDigit()
+                    }
+                } icon: {
+                    Image(systemName: meta.icon)
+                        .foregroundStyle(meta.color)
+                        .frame(width: 20)
+                }
+                .tag(category)
+            }
+        }
+        .listStyle(.sidebar)
+    }
+}
+
+// MARK: - Detail Header Bar
+
+struct DetailHeaderBar: View {
+    @ObservedObject var viewModel: ConfigMetadataViewModel
+
+    private var title: String {
+        if !viewModel.searchText.isEmpty {
+            return "Search Results"
+        }
+        return viewModel.selectedCategory ?? "Settings"
+    }
+
+    private var subtitle: String {
+        if !viewModel.searchText.isEmpty {
+            let count = viewModel.searchResultsByCategory.reduce(0) { $0 + $1.items.count }
+            return "\(count) match\(count == 1 ? "" : "es")"
+        }
+        if let cat = viewModel.selectedCategory {
+            let count = viewModel.itemsByCategory[cat]?.count ?? 0
+            return "\(count) option\(count == 1 ? "" : "s")"
+        }
+        return ""
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title)
+                    .font(.title3.weight(.semibold))
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer()
+
+            if viewModel.hasUnsavedChanges {
+                Text("\(viewModel.pendingChanges.count) unsaved")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+
+                Button("Discard") {
+                    viewModel.discardChanges()
+                }
+                .controlSize(.small)
+
+                Button("Apply") {
+                    viewModel.applyChanges()
+                }
+                .controlSize(.small)
+                .buttonStyle(.borderedProminent)
+                .tint(.accentColor)
+            }
+
+            SearchField(text: $viewModel.searchText)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+}
+
+// MARK: - Search Field
+
+struct SearchField: View {
+    @Binding var text: String
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .font(.system(size: 11))
+
+            TextField("Search", text: $text)
+                .textFieldStyle(.plain)
+                .font(.callout)
+
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(Color(NSColor.controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color(NSColor.separatorColor), lineWidth: 0.5)
+        )
+        .frame(width: 180)
+    }
+}
+
+// MARK: - Detail Content
+
+struct DetailContentView: View {
+    @ObservedObject var viewModel: ConfigMetadataViewModel
+
+    var body: some View {
+        if !viewModel.searchText.isEmpty {
+            searchResults
+        } else if let category = viewModel.selectedCategory {
+            categoryList(category)
+        } else {
+            emptyState
+        }
+    }
+
+    @ViewBuilder
+    private var searchResults: some View {
+        let groups = viewModel.searchResultsByCategory
+        if groups.isEmpty {
+            noResults
+        } else {
+            List {
+                ForEach(groups, id: \.category) { group in
+                    Section(group.category) {
+                        ForEach(group.items) { item in
+                            ConfigItemRow(
+                                item: item,
+                                value: viewModel.binding(for: item.name),
+                                isModified: viewModel.modifiedKeys.contains(item.name),
+                                isPending: viewModel.pendingChanges.contains(item.name),
+                                onReset: { viewModel.resetKey(item.name) }
+                            )
+                        }
+                    }
+                }
+            }
+            .listStyle(.inset(alternatesRowBackgrounds: false))
+        }
+    }
+
+    private func categoryList(_ category: String) -> some View {
+        List {
+            Section {
+                ForEach(viewModel.items(for: category)) { item in
+                    ConfigItemRow(
+                        item: item,
+                        value: viewModel.binding(for: item.name),
+                        isModified: viewModel.modifiedKeys.contains(item.name),
+                        isPending: viewModel.pendingChanges.contains(item.name),
+                        onReset: { viewModel.resetKey(item.name) }
+                    )
+                }
+            }
+        }
+        .listStyle(.inset(alternatesRowBackgrounds: false))
+        .id(category)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "sidebar.left")
+                .font(.system(size: 36))
+                .foregroundStyle(.quaternary)
+            Text("Select a category")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var noResults: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 36))
+                .foregroundStyle(.quaternary)
+            Text("No results for \"\(viewModel.searchText)\"")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Config Item Row
+
+struct ConfigItemRow: View {
+    let item: ConfigMetadataItem
+    @Binding var value: String
+    let isModified: Bool
+    let isPending: Bool
+    let onReset: () -> Void
+
+    @State private var isHovering = false
+    @State private var showFullDescription = false
+
+    private var boolValue: Binding<Bool> {
+        Binding(
+            get: { value == "true" },
+            set: { value = $0 ? "true" : "false" }
+        )
+    }
+
+    var body: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Text(item.name)
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundStyle(isModified ? Color.accentColor : .primary)
+
+                    if isPending {
+                        Circle()
+                            .fill(.orange)
+                            .frame(width: 6, height: 6)
+                            .help("Unsaved change")
+                    }
+                }
+
+                if !item.description.isEmpty {
+                    Text(item.description)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                        .onTapGesture {
+                            showFullDescription.toggle()
+                        }
+                        .popover(isPresented: $showFullDescription, arrowEdge: .bottom) {
+                            ScrollView {
+                                Text(item.description)
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                    .padding(12)
+                                    .frame(maxWidth: 400, alignment: .leading)
+                                    .textSelection(.enabled)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .frame(maxWidth: 420, maxHeight: 300)
+                        }
+                }
+            }
+
+            Spacer(minLength: 16)
+
+            HStack(spacing: 8) {
+                Button {
+                    onReset()
+                } label: {
+                    Image(systemName: "arrow.uturn.backward.circle.fill")
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Reset to default")
+                .opacity(isModified && isHovering ? 1 : 0)
+                .animation(.easeInOut(duration: 0.15), value: isHovering)
+
+                controlView
+            }
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            isHovering = hovering
+        }
+    }
+
+    @ViewBuilder
+    private var controlView: some View {
+        switch item.fieldType {
+        case .boolean:
+            Toggle("", isOn: boolValue)
+                .toggleStyle(.switch)
+                .labelsHidden()
+
+        case .option:
+            Picker("", selection: $value) {
+                ForEach(item.options, id: \.self) { option in
+                    Text(option).tag(option)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(width: 180)
+
+        case .string:
+            TextField("", text: $value)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 180)
+        }
+    }
+}
+
+// MARK: - Error Banner
+
 struct ConfigErrorBanner: View {
     let errors: [String]
 
@@ -297,14 +589,24 @@ struct ConfigErrorBanner: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
+            HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.yellow)
-                Text("^[\(errors.count) configuration error(s)](inflect: true)")
-                    .fontWeight(.medium)
+                    .foregroundStyle(.yellow)
+
+                Text("^[\(errors.count) configuration error](inflect: true)")
+                    .font(.callout.weight(.medium))
+
                 Spacer()
-                Button(action: { withAnimation { isExpanded.toggle() } }) {
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .rotationEffect(.degrees(isExpanded ? -180 : 0))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
             }
@@ -314,93 +616,25 @@ struct ConfigErrorBanner: View {
                     VStack(alignment: .leading, spacing: 2) {
                         ForEach(errors, id: \.self) { error in
                             Text(error)
-                                .font(.system(size: 11).monospaced())
+                                .font(.system(size: 11, design: .monospaced))
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
-                    .padding(6)
+                    .padding(8)
                 }
-                .frame(maxHeight: 120)
-                .background(Color(NSColor.controlBackgroundColor))
-                .cornerRadius(4)
+                .frame(maxHeight: 100)
+                .background(.background.opacity(0.6))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
             }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
-        .background(Color.yellow.opacity(0.1))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.yellow.opacity(0.08))
     }
 }
 
-/// Row view for a single config item
-struct ConfigItemRow: View {
-    let item: ConfigMetadataItem
-    @ObservedObject var viewModel: ConfigMetadataViewModel
-
-    private var isModified: Bool {
-        viewModel.modifiedKeys.contains(item.name)
-    }
-
-    private var isPending: Bool {
-        viewModel.pendingChanges.contains(item.name)
-    }
-
-    var body: some View {
-        HStack {
-            HStack(spacing: 4) {
-                Text(item.name)
-                    .font(.system(.body, design: .monospaced))
-                    .fontWeight(.medium)
-                    .foregroundColor(isModified ? .accentColor : .primary)
-
-                // Show indicator for pending changes
-                if isPending {
-                    Circle()
-                        .fill(Color.orange)
-                        .frame(width: 6, height: 6)
-                        .help("Unsaved change")
-                }
-            }
-            .frame(minWidth: 200, alignment: .leading)
-
-            Spacer()
-
-            // Reset button, visible only for GUI-overridden keys
-            if isModified {
-                Button(action: { viewModel.resetKey(item.name) }) {
-                    Image(systemName: "arrow.uturn.backward")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Reset to default")
-            }
-
-            // Render appropriate control based on field type
-            switch item.fieldType {
-            case .boolean:
-                Toggle("", isOn: viewModel.boolBinding(for: item.name))
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-
-            case .option:
-                Picker("", selection: viewModel.binding(for: item.name)) {
-                    ForEach(item.options, id: \.self) { option in
-                        Text(option).tag(option)
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(width: 200)
-
-            case .string:
-                TextField("", text: viewModel.binding(for: item.name))
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 200)
-            }
-        }
-        .padding(.vertical, 4)
-    }
-}
+// MARK: - Preview
 
 struct GUISettingsView_Previews: PreviewProvider {
     static var previews: some View {

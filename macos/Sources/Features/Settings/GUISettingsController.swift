@@ -11,7 +11,7 @@ class GUISettingsController: NSWindowController, NSWindowDelegate {
     override func windowDidLoad() {
         guard let window = window else { return }
         window.center()
-        window.title = "GUI Settings"
+        window.title = "Settings"
         window.contentView = NSHostingView(rootView: GUISettingsView())
     }
 

@@ -600,7 +600,6 @@ class AppDelegate: NSObject,
         guard ghostty.readiness == .ready else { return }
 
         syncMenuShortcut(config, action: "check_for_updates", menuItem: self.menuCheckForUpdates)
-        syncMenuShortcut(config, action: "open_config", menuItem: self.menuOpenConfig)
         syncMenuShortcut(config, action: "reload_config", menuItem: self.menuReloadConfig)
         syncMenuShortcut(config, action: "quit", menuItem: self.menuQuit)
 
@@ -907,9 +906,11 @@ class AppDelegate: NSObject,
         }
 
         // If we have configuration errors, we need to show them.
+        // Skip the popup if the reload was triggered by the GUI settings panel —
+        // it shows errors inline in its own banner.
         let c = ConfigurationErrorsController.sharedInstance
         c.errors = config.errors
-        if (c.errors.count > 0) {
+        if (c.errors.count > 0 && !ConfigMetadataViewModel.isReloadingFromGUI) {
             if (c.window == nil || !c.window!.isVisible) {
                 c.showWindow(self)
             }
@@ -1155,7 +1156,7 @@ class AppDelegate: NSObject,
         AboutController.shared.show()
     }
 
-    @IBAction func showGUISettings(_ sender: Any?) {
+    @IBAction func showPreferences(_ sender: Any?) {
         GUISettingsController.shared.show()
     }
 
