@@ -381,6 +381,8 @@ typedef enum {
 typedef struct {
   const char* name;
   ghostty_field_type_e field_type;
+  const char* description;
+  const char* category;
   const char** options;
   size_t options_count;
 } ghostty_config_metadata_entry_s;

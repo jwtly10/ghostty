@@ -50,7 +50,7 @@ fn genConfig(alloc: std.mem.Allocator, writer: *std.Io.Writer) !void {
 }
 
 /// Generates metadata around configuration
-fn genConfigMetadata(_: std.mem.Allocator, writer: *std.Io.Writer, _: std.zig.Ast) !void {
+fn genConfigMetadata(alloc: std.mem.Allocator, writer: *std.Io.Writer, ast: std.zig.Ast) !void {
     // Types used by the code gen
     try writer.writeAll(
         \\pub const FieldType = enum(c_int) {
@@ -63,6 +63,8 @@ fn genConfigMetadata(_: std.mem.Allocator, writer: *std.Io.Writer, _: std.zig.As
         \\pub const ConfigMetadataEntry = extern struct {
         \\   name: [*:0]const u8,
         \\   field_type: FieldType,
+        \\   description: [*:0]const u8,
+        \\   category: [*:0]const u8,
         \\   options: [*]const [*:0]const u8, // Pointer to null-terminated array of option strings, empty otherwise
         \\   options_count: usize,
         \\};
@@ -97,19 +99,51 @@ fn genConfigMetadata(_: std.mem.Allocator, writer: *std.Io.Writer, _: std.zig.As
         \\
     );
 
-    // Generates the config metadata list for all fields
+    // Generates the config metadata struct for all Config fields
     inline for (@typeInfo(Config).@"struct".fields) |field| {
         if (field.name[0] == '_') continue;
+        // Getting base type metadata
         const field_type = getFieldType(field.type);
         const base = unwrapOptional(field.type);
         const is_enum = @typeInfo(base) == .@"enum";
 
+        // Find the field in the AST to get its doc comment
+        const tokens = ast.tokens.items(.tag);
+        const parsed = found: for (tokens, 0..) |token, i| {
+            if (token != .identifier) continue;
+            if (tokens[i - 1] != .doc_comment) continue;
+
+            const name = ast.tokenSlice(@intCast(i));
+            const key = if (name[0] == '@') name[2 .. name.len - 1] else name;
+            if (!std.mem.eql(u8, key, field.name)) continue;
+
+            break :found try parseDocComment(alloc, ast, @intCast(i - 1), tokens);
+        } else ParsedComment{ .category = "", .description = "" };
+
+        // Write name
         try writer.writeAll("    .{ .name = \"");
         try writer.writeAll(field.name);
+
+        // Write type
         try writer.writeAll("\", .field_type = .");
         try writer.writeAll(@tagName(field_type));
-        try writer.writeAll(", .options = ");
 
+        // Write description
+        try writer.writeAll(", .description =");
+        if (parsed.description.len == 0) {
+            try writer.writeAll("\"\"");
+        } else {
+            try writer.writeAll("\n");
+            try writer.writeAll(parsed.description);
+        }
+
+        // Write category
+        try writer.writeAll(", .category = \"");
+        try writer.writeAll(parsed.category);
+        try writer.writeAll("\"");
+
+        // Write options
+        try writer.writeAll(", .options = ");
         if (is_enum) {
             try writer.writeAll("&");
             // TODO: Fix the duplication
@@ -123,6 +157,7 @@ fn genConfigMetadata(_: std.mem.Allocator, writer: *std.Io.Writer, _: std.zig.As
             try writer.writeAll("&.{}");
         }
 
+        // Write options count
         try writer.writeAll(", .options_count = ");
         if (is_enum) {
             const enum_info = @typeInfo(base).@"enum";
@@ -156,6 +191,8 @@ pub const FieldType = enum(c_int) {
 pub const ConfigMetadataEntry = extern struct {
     name: [*:0]const u8,
     field_type: FieldType,
+    description: [*:0]const u8,
+    category: [*:0]const u8,
     options: [*]const [*:0]const u8,
     options_count: usize,
 };
@@ -231,6 +268,7 @@ fn genConfigField(
     const tokens = ast.tokens.items(.tag);
     for (tokens, 0..) |token, i| {
         // We only care about identifiers that are preceded by doc comments.
+        // NOTE: Ensure this holds true when adding /// @category to fields with no existing docs
         if (token != .identifier) continue;
         if (tokens[i - 1] != .doc_comment) continue;
 
@@ -240,6 +278,12 @@ fn genConfigField(
         if (!std.mem.eql(u8, key, field)) continue;
 
         const comment = try extractDocComments(alloc, ast, @intCast(i - 1), tokens);
+        // TODO: JW: Need to improve all of this.....
+        // This temporarily resolves the issue where the only doc comment is the new /// @category
+        // and the existing `extractDocComments` logic kind of
+        if (std.mem.eql(u8, comment, "")) {
+            break;
+        }
         try writer.writeAll("pub const ");
         try writer.writeAll(name);
         try writer.writeAll(": [:0]const u8 = \n");
@@ -314,6 +358,58 @@ fn genKeybindActions(alloc: std.mem.Allocator, writer: *std.Io.Writer) !void {
     try writer.writeAll("};\n");
 }
 
+const ParsedComment = struct {
+    category: []const u8,
+    description: []const u8,
+};
+
+fn parseDocComment(
+    alloc: std.mem.Allocator,
+    ast: std.zig.Ast,
+    index: std.zig.Ast.TokenIndex,
+    tokens: []std.zig.Token.Tag,
+) !ParsedComment {
+    const start_idx: usize = start_idx: for (0..index) |i| {
+        const reverse_i = index - i - 1;
+        const token = tokens[reverse_i];
+        if (token != .doc_comment) break :start_idx reverse_i + 1;
+    } else unreachable;
+
+    var category: []const u8 = "";
+    var desc_buffer: std.Io.Writer.Allocating = .init(alloc);
+    defer desc_buffer.deinit();
+
+    var lines: std.ArrayList([]const u8) = .empty;
+    defer lines.deinit(alloc);
+    for (start_idx..index + 1) |i| {
+        const token = tokens[i];
+        if (token != .doc_comment) break;
+
+        const raw = ast.tokenSlice(@intCast(i))[3..];
+        const trimmed = std.mem.trimLeft(u8, raw, " ");
+        if (std.mem.startsWith(u8, trimmed, "@category")) {
+            // Parse the category line and skip processing as description
+            category = trimmed["@category ".len..];
+            continue;
+        }
+
+        try lines.append(alloc, ast.tokenSlice(@intCast(i))[3..]);
+    }
+
+    // Convert the lines to a multiline string.
+    const prefix = findCommonPrefix(lines);
+    for (lines.items) |line| {
+        try desc_buffer.writer.writeAll("    \\\\");
+        try desc_buffer.writer.writeAll(line[@min(prefix, line.len)..]);
+        try desc_buffer.writer.writeAll("\n");
+    }
+
+    return .{
+        .category = category,
+        .description = try desc_buffer.toOwnedSlice(),
+    };
+}
+
 fn extractDocComments(
     alloc: std.mem.Allocator,
     ast: std.zig.Ast,
@@ -328,13 +424,30 @@ fn extractDocComments(
         if (token != .doc_comment) break :start_idx reverse_i + 1;
     } else unreachable;
 
+    var is_category = false;
+
     // Go through and build up the lines.
     var lines: std.ArrayList([]const u8) = .empty;
     defer lines.deinit(alloc);
     for (start_idx..index + 1) |i| {
         const token = tokens[i];
         if (token != .doc_comment) break;
+
+        // Removes @category lines from doc comments
+        // TODO: sets this a flag so we can ignore the output of this..
+        // but we shouldn't be processing this anyway
+        const raw = ast.tokenSlice(@intCast(i))[3..];
+        const trimmed = std.mem.trimLeft(u8, raw, " ");
+        if (std.mem.startsWith(u8, trimmed, "@category")) {
+            is_category = true;
+            continue;
+        }
+
         try lines.append(alloc, ast.tokenSlice(@intCast(i))[3..]);
+    }
+
+    if (is_category) {
+        return "";
     }
 
     // Convert the lines to a multiline string.

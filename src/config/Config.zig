@@ -94,6 +94,7 @@ pub const compatibility = std.StaticStringMap(
     .{ "macos-dock-drop-behavior", compatMacOSDockDropBehavior },
 });
 
+/// @category Font
 /// The font families to use.
 ///
 /// You can generate the list of valid values using the CLI:
@@ -143,10 +144,12 @@ pub const compatibility = std.StaticStringMap(
 /// configuration files or on the CLI if you want to clear values set on the
 /// CLI.
 @"font-family": RepeatableString = .{},
+/// @category Font
 @"font-family-bold": RepeatableString = .{},
 @"font-family-italic": RepeatableString = .{},
 @"font-family-bold-italic": RepeatableString = .{},
 
+/// @category Font
 /// The named font style to use for each of the requested terminal font styles.
 /// This looks up the style based on the font style string advertised by the
 /// font itself. For example, "Iosevka Heavy" has a style of "Heavy".
@@ -164,6 +167,7 @@ pub const compatibility = std.StaticStringMap(
 @"font-style-italic": FontStyle = .{ .default = {} },
 @"font-style-bold-italic": FontStyle = .{ .default = {} },
 
+/// @category Font
 /// Control whether Ghostty should synthesize a style if the requested style is
 /// not available in the specified font-family.
 ///
@@ -196,6 +200,7 @@ pub const compatibility = std.StaticStringMap(
 /// By default, synthetic styles are enabled.
 @"font-synthetic-style": FontSyntheticStyle = .{},
 
+/// @category Font
 /// Apply a font feature. To enable multiple font features you can repeat
 /// this multiple times or use a comma-separated list of feature settings.
 ///
@@ -220,6 +225,7 @@ pub const compatibility = std.StaticStringMap(
 /// To generally disable most ligatures, use `-calt, -liga, -dlig`.
 @"font-feature": RepeatableString = .{},
 
+/// @category Font
 /// Font size in points. This value can be a non-integer and the nearest integer
 /// pixel size will be selected. If you have a high dpi display where 1pt = 2px
 /// then you can get an odd numbered pixel size by specifying a half point.
@@ -243,6 +249,7 @@ pub const compatibility = std.StaticStringMap(
     else => 12,
 },
 
+/// @category Font
 /// A repeatable configuration to set one or more font variations values for
 /// a variable font. A variable font is a single font, usually with a filename
 /// ending in `-VF.ttf` or `-VF.otf` that contains one or more configurable axes
@@ -266,6 +273,7 @@ pub const compatibility = std.StaticStringMap(
 @"font-variation-italic": RepeatableFontVariation = .{},
 @"font-variation-bold-italic": RepeatableFontVariation = .{},
 
+/// @category Font
 /// Force one or a range of Unicode codepoints to map to a specific named font.
 /// This is useful if you want to support special symbols or if you want to use
 /// specific glyphs that render better for your specific font.
@@ -308,10 +316,12 @@ pub const compatibility = std.StaticStringMap(
 /// Note: This only applies to text copying operations, not URL copying.
 @"clipboard-codepoint-map": RepeatableClipboardCodepointMap = .{},
 
+/// @category Font
 /// Draw fonts with a thicker stroke, if supported.
 /// This is currently only supported on macOS.
 @"font-thicken": bool = false,
 
+/// @category Font
 /// Strength of thickening when `font-thicken` is enabled.
 ///
 /// Valid values are integers between `0` and `255`. `0` does not correspond to
@@ -513,6 +523,7 @@ pub const compatibility = std.StaticStringMap(
 /// Example: `hinting`, `no-hinting`, `force-autohint`, `no-force-autohint`
 @"freetype-load-flags": FreetypeLoadFlags = .{},
 
+/// @category Colors
 /// A theme to use. This can be a built-in theme name, a custom theme
 /// name, or an absolute path to a custom theme file. Ghostty also supports
 /// specifying a different theme to use for light and dark mode. Each
@@ -568,10 +579,12 @@ pub const compatibility = std.StaticStringMap(
 ///   - macOS: titlebar tabs style is not updated when switching themes.
 theme: ?Theme = null,
 
+/// @category Colors
 /// Background color for the window.
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
 background: Color = .{ .r = 0x28, .g = 0x2C, .b = 0x34 },
 
+/// @category Colors
 /// Foreground color for the window.
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
 foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
@@ -673,6 +686,7 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 /// Available since: 1.2.0
 @"background-image-repeat": bool = false,
 
+/// @category Colors
 /// The foreground and background color for selection. If this is not set, then
 /// the selection color is just the inverted window background and foreground
 /// (note: not to be confused with the cell bg/fg).
@@ -738,6 +752,7 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 /// Available since: 1.3.0
 @"selection-word-chars": SelectionWordChars = .{},
 
+/// @category Colors
 /// The minimum contrast ratio between the foreground and background colors.
 /// The contrast ratio is a value between 1 and 21. A value of 1 allows for no
 /// contrast (e.g. black on black). This value is the contrast ratio as defined
@@ -751,6 +766,7 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 /// This value does not apply to Emoji or images.
 @"minimum-contrast": f64 = 1,
 
+/// @category Colors
 /// Color palette for the 256 color form that many terminal applications use.
 /// The syntax of this configuration is `N=COLOR` where `N` is 0 to 255 (for
 /// the 256 colors in the terminal color table) and `COLOR` is a typical RGB
@@ -765,6 +781,7 @@ foreground: Color = .{ .r = 0xFF, .g = 0xFF, .b = 0xFF },
 /// [see this cheat sheet](https://www.ditig.com/256-colors-cheat-sheet).
 palette: Palette = .{},
 
+/// @category Cursor
 /// The color of the cursor. If this is not set, a default will be chosen.
 ///
 /// Direct colors can be specified as either hex (`#RRGGBB` or `RRGGBB`)
@@ -780,6 +797,7 @@ palette: Palette = .{},
 ///     (Available since: 1.2.0)
 @"cursor-color": ?TerminalColor = null,
 
+/// @category Cursor
 /// The opacity level (opposite of transparency) of the cursor. A value of 1
 /// is fully opaque and a value of 0 is fully transparent. A value less than 0
 /// or greater than 1 will be clamped to the nearest valid value. Note that a
@@ -787,6 +805,7 @@ palette: Palette = .{},
 /// make it difficult to find the cursor.
 @"cursor-opacity": f64 = 1.0,
 
+/// @category Cursor
 /// The style of the cursor. This sets the default style. A running program can
 /// still request an explicit cursor style using escape sequences (such as `CSI
 /// q`). Shell configurations will often request specific cursor styles.
@@ -804,6 +823,7 @@ palette: Palette = .{},
 ///   * `block_hollow`
 @"cursor-style": terminal.CursorStyle = .block,
 
+/// @category Cursor
 /// Sets the default blinking state of the cursor. This is just the default
 /// state; running programs may override the cursor style using `DECSCUSR` (`CSI
 /// q`).
@@ -823,6 +843,7 @@ palette: Palette = .{},
 ///   * `false`
 @"cursor-style-blink": ?bool = null,
 
+/// @category Cursor
 /// The color of the text under the cursor. If this is not set, a default will
 /// be chosen.
 /// Specified as either hex (`#RRGGBB` or `RRGGBB`) or a named X11 color.
@@ -831,6 +852,7 @@ palette: Palette = .{},
 /// background color.
 @"cursor-text": ?TerminalColor = null,
 
+/// @category Cursor
 /// Enables the ability to move the cursor at prompts by using `alt+click` on
 /// Linux and `option+click` on macOS.
 ///
@@ -846,6 +868,7 @@ palette: Palette = .{},
 /// way to implement it.
 @"cursor-click-to-move": bool = true,
 
+/// @category Mouse
 /// Hide the mouse immediately when typing. The mouse becomes visible again
 /// when the mouse is used (button, movement, etc.). Platform-specific behavior
 /// may dictate other scenarios where the mouse is shown. For example on macOS,
@@ -868,6 +891,7 @@ palette: Palette = .{},
 /// The default is `keystroke, no-output`.
 @"scroll-to-bottom": ScrollToBottom = .default,
 
+/// @category Mouse
 /// Determines whether running programs can detect the shift key pressed with a
 /// mouse click. Typically, the shift key is used to extend mouse selection.
 ///
@@ -895,6 +919,7 @@ palette: Palette = .{},
 ///   * `never`
 @"mouse-shift-capture": MouseShiftCapture = .false,
 
+/// @category Mouse
 /// Enable or disable mouse reporting. When set to `false`, mouse events will
 /// not be reported to terminal applications even if they request it. This
 /// allows you to always use the mouse for selection and other terminal UI
@@ -907,6 +932,7 @@ palette: Palette = .{},
 /// action.
 @"mouse-reporting": bool = true,
 
+/// @category Mouse
 /// Multiplier for scrolling distance with the mouse wheel.
 ///
 /// A prefix of `precision:` or `discrete:` can be used to set the multiplier
@@ -1062,6 +1088,7 @@ palette: Palette = .{},
 @"search-selected-foreground": TerminalColor = .{ .color = .{ .r = 0, .g = 0, .b = 0 } },
 @"search-selected-background": TerminalColor = .{ .color = .{ .r = 0xF2, .g = 0xA5, .b = 0x7E } },
 
+/// @category Terminal
 /// The command to run, usually a shell. If this is not an absolute path, it'll
 /// be looked up in the `PATH`. If this is not set, a default will be looked up
 /// from your system. The rules for the default lookup are:
@@ -1303,6 +1330,7 @@ input: RepeatableReadableIO = .{},
 /// command.
 @"abnormal-command-exit-runtime": u32 = 250,
 
+/// @category Terminal
 /// The size of the scrollback buffer in bytes. This also includes the active
 /// screen. No matter what this is set to, enough memory will always be
 /// allocated for the visible screen and anything leftover is the limit for
@@ -1374,6 +1402,7 @@ link: RepeatableLink = .{},
 /// Available since: 1.2.0
 @"link-previews": LinkPreviews = .true,
 
+/// @category Window
 /// Whether to start the window in a maximized state. This setting applies
 /// to new windows and does not apply to tabs, splits, etc. However, this setting
 /// will apply to all new windows, not just the first one.
@@ -1381,6 +1410,7 @@ link: RepeatableLink = .{},
 /// Available since: 1.1.0
 maximize: bool = false,
 
+/// @category Window
 /// Start new windows in fullscreen. This setting applies to new windows and
 /// does not apply to tabs, splits, etc. However, this setting will apply to all
 /// new windows, not just the first one.
@@ -1457,6 +1487,7 @@ class: ?[:0]const u8 = null,
 ///   * `inherit` - The working directory of the launching process.
 @"working-directory": ?[]const u8 = null,
 
+/// @category Keyboard
 /// Key bindings. The format is `trigger=action`. Duplicate triggers will
 /// overwrite previously set values. The list of actions is available in
 /// the documentation or using the `ghostty +list-actions` command.
@@ -1831,6 +1862,7 @@ keybind: Keybinds = .{},
 /// This configuration can be repeated to specify multiple remaps.
 @"key-remap": KeyRemapSet = .empty,
 
+/// @category Window
 /// Horizontal window padding. This applies padding between the terminal cells
 /// and the left and right window borders. The value is in points, meaning that
 /// it will be scaled appropriately for screen DPI.
@@ -1850,6 +1882,7 @@ keybind: Keybinds = .{},
 /// `window-padding-x = 2` will set both paddings to 2.
 @"window-padding-x": WindowPadding = .{ .top_left = 2, .bottom_right = 2 },
 
+/// @category Window
 /// Vertical window padding. This applies padding between the terminal cells and
 /// the top and bottom window borders. The value is in points, meaning that it
 /// will be scaled appropriately for screen DPI.
@@ -1940,6 +1973,7 @@ keybind: Keybinds = .{},
 /// configuration `font-size` will be used.
 @"window-inherit-font-size": bool = true,
 
+/// @category Window
 /// Configure a preference for window decorations. This setting specifies
 /// a _preference_; the actual OS, desktop environment, window manager, etc.
 /// may override this preference. Ghostty will do its best to respect this
@@ -1994,6 +2028,7 @@ keybind: Keybinds = .{},
 ///        or rounded corners, use `macos-titlebar-style = hidden` instead.
 @"window-decoration": WindowDecoration = .auto,
 
+/// @category Window
 /// The font that will be used for the application's window and tab titles.
 ///
 /// If this setting is left unset, the system default font will be used.
@@ -2015,6 +2050,7 @@ keybind: Keybinds = .{},
 /// Available since: 1.1.0
 @"window-subtitle": WindowSubtitle = .false,
 
+/// @category Window
 /// The theme to use for the windows. Valid values:
 ///
 ///   * `auto` - Determine the theme based on the configured terminal
@@ -2035,6 +2071,7 @@ keybind: Keybinds = .{},
 /// This is currently only supported on macOS and Linux.
 @"window-theme": WindowTheme = .auto,
 
+/// @category Window
 /// The color space to use when interpreting terminal colors. "Terminal colors"
 /// refers to colors specified in your configuration and colors produced by
 /// direct-color SGR sequences.
@@ -2047,6 +2084,7 @@ keybind: Keybinds = .{},
 /// This setting is currently only supported on macOS.
 @"window-colorspace": WindowColorspace = .srgb,
 
+/// @category Window
 /// The initial window size. This size is in terminal grid cells by default.
 /// Both values must be set to take effect. If only one value is set, it is
 /// ignored.
@@ -2103,6 +2141,7 @@ keybind: Keybinds = .{},
 @"window-position-x": ?i16 = null,
 @"window-position-y": ?i16 = null,
 
+/// @category Window
 /// Whether to enable saving and restoring window state. Window state includes
 /// their position, size, tabs, splits, etc. Some window state requires shell
 /// integration, such as preserving working directories. See `shell-integration`
@@ -2135,6 +2174,7 @@ keybind: Keybinds = .{},
 /// This is currently only supported on macOS. This has no effect on Linux.
 @"window-save-state": WindowSaveState = .default,
 
+/// @category Window
 /// Resize the window in discrete increments of the focused surface's cell size.
 /// If this is disabled, surfaces are resized in pixel increments. Currently
 /// only supported on macOS.
@@ -2254,6 +2294,7 @@ keybind: Keybinds = .{},
 /// Default is false.
 @"focus-follows-mouse": bool = false,
 
+/// @category Clipboard
 /// Whether to allow programs running in the terminal to read/write to the
 /// system clipboard (OSC 52, for googling). The default is to allow clipboard
 /// reading after prompting the user and allow writing unconditionally.
@@ -2267,12 +2308,14 @@ keybind: Keybinds = .{},
 @"clipboard-read": ClipboardAccess = .ask,
 @"clipboard-write": ClipboardAccess = .allow,
 
+/// @category Clipboard
 /// Trims trailing whitespace on data that is copied to the clipboard. This does
 /// not affect data sent to the clipboard via `clipboard-write`. This only
 /// applies to trailing whitespace on lines that have other characters.
 /// Completely blank lines always have their whitespace trimmed.
 @"clipboard-trim-trailing-spaces": bool = true,
 
+/// @category Clipboard
 /// Require confirmation before pasting text that appears unsafe. This helps
 /// prevent a "copy/paste attack" where a user may accidentally execute unsafe
 /// commands by pasting text with newlines.
@@ -2672,6 +2715,7 @@ keybind: Keybinds = .{},
 /// Available since: 1.2.0
 @"quick-terminal-keyboard-interactivity": QuickTerminalKeyboardInteractivity = .@"on-demand",
 
+/// @category Terminal
 /// Whether to enable shell integration auto-injection or not. Shell integration
 /// greatly enhances the terminal experience by enabling a number of features:
 ///
@@ -2698,6 +2742,7 @@ keybind: Keybinds = .{},
 /// The default value is `detect`.
 @"shell-integration": ShellIntegration = .detect,
 
+/// @category Terminal
 /// Shell integration features to enable. These require our shell integration
 /// to be loaded, either automatically via shell-integration or manually.
 ///
@@ -3552,6 +3597,7 @@ else
 /// Available since Ghostty 1.2.0.
 @"faint-opacity": f64 = 0.5,
 
+/// @category Terminal
 /// This will be used to set the `TERM` environment variable.
 /// HACK: We set this with an `xterm` prefix because vim uses that to enable key
 /// protocols (specifically this will enable `modifyOtherKeys`), among other
