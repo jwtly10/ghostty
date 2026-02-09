@@ -57,8 +57,7 @@ export fn ghostty_config_load_cli_args(self: *Config) void {
     };
 }
 
-/// Load the configuration from a given string
-/// TODO: JW: note the format exactly
+/// Load configuration from a null-terminated string.
 export fn ghostty_config_load_string(self: *Config, str: [*]const u8, len: usize) void {
     self.loadString(state.alloc, str[0..len]) catch |err| {
         log.err("error loading config err={}", .{err});

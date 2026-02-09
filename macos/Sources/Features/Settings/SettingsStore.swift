@@ -6,7 +6,6 @@ class SettingsStore {
     static let shared = SettingsStore()
 
     /// The UserDefaults domain prefix for all GUI settings keys.
-    // TODO: JW: Could support more granular grouping?
     private static let keyPrefix = "ghostty."
 
     private let defaults = UserDefaults.standard
