@@ -46,12 +46,30 @@ fn genConfig(alloc: std.mem.Allocator, writer: *std.Io.Writer) !void {
     try writer.writeAll("};\n");
 
     // Generate metadata entry struct and runtime array
+    // Done separately to the 'Configuration help' section to avoid any breaking changes
     try genConfigMetadata(alloc, writer, ast);
 }
 
+/// Used by the configuration code gen to crudely map types
+pub const FieldType = enum(c_int) {
+    string,
+    boolean,
+    option,
+};
+
+/// Used by the configuration code gen to capture configuration metadata
+pub const ConfigMetadataEntry = extern struct {
+    name: [*:0]const u8,
+    field_type: FieldType,
+    description: [*:0]const u8,
+    category: [*:0]const u8,
+    options: [*]const [*:0]const u8,
+    options_count: usize,
+};
+
 /// Generates metadata around configuration
 fn genConfigMetadata(alloc: std.mem.Allocator, writer: *std.Io.Writer, ast: std.zig.Ast) !void {
-    // Types used by the code gen
+    // Types used from the
     try writer.writeAll(
         \\pub const FieldType = enum(c_int) {
         \\   string,
@@ -76,15 +94,10 @@ fn genConfigMetadata(alloc: std.mem.Allocator, writer: *std.Io.Writer, ast: std.
     inline for (@typeInfo(Config).@"struct".fields) |field| {
         if (field.name[0] == '_') continue;
 
-        // Generates enum options array for exposing a configs options via C api
         const base = unwrapOptional(field.type);
         if (@typeInfo(base) == .@"enum") {
             try writer.writeAll("pub const ");
-            // TODO: JW: We duplicate this... not the best
-            var sanitised_name: [field.name.len]u8 = undefined;
-            for (field.name, 0..) |c, i| {
-                sanitised_name[i] = if (c == '-') '_' else c;
-            }
+            const sanitised_name = comptime sanitizeFieldName(field.name);
             try writer.writeAll(&sanitised_name);
             try writer.writeAll("_options = [_][*:0]const u8{ ");
             try genEnumOptions(base, writer);
@@ -146,11 +159,7 @@ fn genConfigMetadata(alloc: std.mem.Allocator, writer: *std.Io.Writer, ast: std.
         try writer.writeAll(", .options = ");
         if (is_enum) {
             try writer.writeAll("&");
-            // TODO: JW: Fix the duplication
-            var sanitised_name: [field.name.len]u8 = undefined;
-            for (field.name, 0..) |c, i| {
-                sanitised_name[i] = if (c == '-') '_' else c;
-            }
+            const sanitised_name = comptime sanitizeFieldName(field.name);
             try writer.writeAll(&sanitised_name);
             try writer.writeAll("_options");
         } else {
@@ -182,25 +191,8 @@ fn genEnumOptions(comptime T: type, wrtier: *std.Io.Writer) !void {
     }
 }
 
-pub const FieldType = enum(c_int) {
-    string,
-    boolean,
-    option,
-};
-
-pub const ConfigMetadataEntry = extern struct {
-    name: [*:0]const u8,
-    field_type: FieldType,
-    description: [*:0]const u8,
-    category: [*:0]const u8,
-    options: [*]const [*:0]const u8,
-    options_count: usize,
-};
-
 fn getFieldType(comptime T: type) FieldType {
     const base = unwrapOptional(T);
-    // TODO: JW: @"cursor-style-blink": ?bool = null,
-    // Probably need to be smarter about this when null actually means something....
 
     if (base == bool) return .boolean;
 
@@ -214,49 +206,6 @@ fn unwrapOptional(comptime T: type) type {
         .optional => |opt| return opt.child,
         else => return T,
     }
-}
-
-/// Generate a single metadata entry for the array
-fn genConfigMetadataEntry(
-    alloc: std.mem.Allocator,
-    writer: *std.Io.Writer,
-    ast: std.zig.Ast,
-    comptime field_name: []const u8,
-) !void {
-    const tokens = ast.tokens.items(.tag);
-    var default_value: []const u8 = "";
-
-    // Extract default value from AST
-    for (tokens, 0..) |token, i| {
-        if (token != .identifier) continue;
-        if (i == 0 or tokens[i - 1] != .doc_comment) continue;
-
-        const name = ast.tokenSlice(@intCast(i));
-        const key = if (name[0] == '@') name[2 .. name.len - 1] else name;
-        if (!std.mem.eql(u8, key, field_name)) continue;
-
-        // Extract default value: find "=" and read until ","
-        if (i + 1 < tokens.len and tokens[i + 1] == .colon) {
-            var j = i + 2;
-            while (j < tokens.len and tokens[j] != .equal) : (j += 1) {}
-            if (j < tokens.len) {
-                var k = j + 1;
-                while (k < tokens.len and tokens[k] != .comma) : (k += 1) {}
-
-                var default_buf: std.ArrayList(u8) = .empty;
-                defer default_buf.deinit(alloc);
-                for (j + 2..k) |idx| {
-                    try default_buf.appendSlice(alloc, ast.tokenSlice(@intCast(idx)));
-                }
-                default_value = try alloc.dupe(u8, std.mem.trim(u8, default_buf.items, " \t\n\r"));
-            }
-        }
-        break;
-    }
-
-    try writer.writeAll("    .{ .name = \"");
-    try writer.writeAll(field_name);
-    try writer.writeAll("\" },\n");
 }
 
 fn genConfigField(
@@ -278,9 +227,6 @@ fn genConfigField(
         if (!std.mem.eql(u8, key, field)) continue;
 
         const comment = try extractDocComments(alloc, ast, @intCast(i - 1), tokens);
-        // TODO: JW: Need to improve all of this.....
-        // This temporarily resolves the issue where the only doc comment is the new /// @category
-        // and the existing `extractDocComments` logic kind of
         if (std.mem.eql(u8, comment, "")) {
             break;
         }
@@ -363,6 +309,8 @@ const ParsedComment = struct {
     description: []const u8,
 };
 
+/// Parses doc comments pulling out category if available, with the rest of the comment
+/// as a multiline string
 fn parseDocComment(
     alloc: std.mem.Allocator,
     ast: std.zig.Ast,
@@ -388,7 +336,7 @@ fn parseDocComment(
         const raw = ast.tokenSlice(@intCast(i))[3..];
         const trimmed = std.mem.trimLeft(u8, raw, " ");
         if (std.mem.startsWith(u8, trimmed, "@category")) {
-            // Parse the category line and skip processing as description
+            // Parse the category line and skip processing as part of description
             category = trimmed["@category ".len..];
             continue;
         }
@@ -424,31 +372,21 @@ fn extractDocComments(
         if (token != .doc_comment) break :start_idx reverse_i + 1;
     } else unreachable;
 
-    var is_category = false;
-
-    // Go through and build up the lines.
+    // Go through and build up the lines, skipping @category directives.
     var lines: std.ArrayList([]const u8) = .empty;
     defer lines.deinit(alloc);
     for (start_idx..index + 1) |i| {
         const token = tokens[i];
         if (token != .doc_comment) break;
 
-        // Removes @category lines from doc comments
-        // TODO: JW: sets this a flag so we can ignore the output of this..
-        // but we shouldn't be processing this anyway
         const raw = ast.tokenSlice(@intCast(i))[3..];
         const trimmed = std.mem.trimLeft(u8, raw, " ");
-        if (std.mem.startsWith(u8, trimmed, "@category")) {
-            is_category = true;
-            continue;
-        }
+        if (std.mem.startsWith(u8, trimmed, "@category")) continue;
 
         try lines.append(alloc, ast.tokenSlice(@intCast(i))[3..]);
     }
 
-    if (is_category) {
-        return "";
-    }
+    if (lines.items.len == 0) return "";
 
     // Convert the lines to a multiline string.
     var buffer: std.Io.Writer.Allocating = .init(alloc);
@@ -462,6 +400,15 @@ fn extractDocComments(
     try buffer.writer.writeAll(";\n");
 
     return buffer.toOwnedSlice();
+}
+
+fn sanitizeFieldName(comptime name: []const u8) [name.len]u8 {
+    @setEvalBranchQuota(10_000);
+    var result: [name.len]u8 = undefined;
+    for (name, 0..) |c, i| {
+        result[i] = if (c == '-') '_' else c;
+    }
+    return result;
 }
 
 fn findCommonPrefix(lines: std.ArrayList([]const u8)) usize {

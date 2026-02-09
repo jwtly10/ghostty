@@ -906,7 +906,7 @@ class AppDelegate: NSObject,
         }
 
         // If we have configuration errors, we need to show them.
-        // Skip the popup if the reload was triggered by the GUI settings panel —
+        // Skip the popup if the reload was triggered by the GUI preferences panel —
         // it shows errors inline in its own banner.
         let c = ConfigurationErrorsController.sharedInstance
         c.errors = config.errors
@@ -1157,7 +1157,7 @@ class AppDelegate: NSObject,
     }
 
     @IBAction func showPreferences(_ sender: Any?) {
-        GUISettingsController.shared.show()
+        SettingsController.shared.show()
     }
 
     @IBAction func showHelp(_ sender: Any) {

@@ -3,16 +3,16 @@ import Cocoa
 import SwiftUI
 import GhosttyKit
 
-class GUISettingsController: NSWindowController, NSWindowDelegate {
-    static let shared: GUISettingsController = GUISettingsController()
+class SettingsController: NSWindowController, NSWindowDelegate {
+    static let shared: SettingsController = SettingsController()
 
-    override var windowNibName: NSNib.Name? { "GUISettings" }
+    override var windowNibName: NSNib.Name? { "Settings" }
 
     override func windowDidLoad() {
         guard let window = window else { return }
         window.center()
         window.title = "Settings"
-        window.contentView = NSHostingView(rootView: GUISettingsView())
+        window.contentView = NSHostingView(rootView: SettingsView())
     }
 
     // MARK: - Functions

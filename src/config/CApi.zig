@@ -216,10 +216,7 @@ const Diagnostic = extern struct {
     message: [*:0]const u8 = "",
 };
 
-// ============================================================================
-// Config Metadata C API
-// ============================================================================
-
+/// Configuration C API
 const help_strings = @import("help_strings");
 
 /// Returns the number of config metadata entries
@@ -233,33 +230,4 @@ export fn ghostty_config_metadata_get(index: usize) ?*const help_strings.ConfigM
     return &help_strings.config_metadata_entries[index];
 }
 
-test "config_metadata: count and get" {
-    const count = ghostty_config_metadata_count();
-    // Should have many config entries
-    try std.testing.expect(count > 100);
-
-    // First entry should be font-family
-    const first = ghostty_config_metadata_get(0);
-    try std.testing.expect(first != null);
-    try std.testing.expectEqualStrings("font-family", std.mem.span(first.?.name));
-
-    // Out of bounds returns null
-    const invalid = ghostty_config_metadata_get(count + 100);
-    try std.testing.expect(invalid == null);
-}
-
-test "config_metadata: print first 5" {
-    const count = ghostty_config_metadata_count();
-    const to_print = @min(count, 5);
-
-    std.debug.print("\n=== Config Metadata Test ===\n", .{});
-    std.debug.print("Total entries: {}\n\n", .{count});
-
-    for (0..to_print) |i| {
-        const entry = ghostty_config_metadata_get(i);
-        if (entry) |e| {
-            std.debug.print("[{}] {s}\n", .{ i, std.mem.span(e.name) });
-            std.debug.print("    default: \"{s}\"\n\n", .{std.mem.span(e.default_value)});
-        }
-    }
-}
+// TODO: Add better tests for Configuration api

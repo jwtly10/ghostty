@@ -537,7 +537,7 @@ extension Ghostty {
             case GHOSTTY_ACTION_OPEN_CONFIG:
                 // TODO: Temp hack to make testing quicker
                 // openConfig();
-                GUISettingsController.shared.show()
+                SettingsController.shared.show()
 
             case GHOSTTY_ACTION_FLOAT_WINDOW:
                 toggleFloatWindow(app, target: target, mode: action.action.float_window)
