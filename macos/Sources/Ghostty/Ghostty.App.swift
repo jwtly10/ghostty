@@ -135,6 +135,10 @@ extension Ghostty {
             #endif
         }
 
+        static func openPreferences() {
+            SettingsController.shared.show()
+        }
+
         /// Reload the configuration.
         func reloadConfig(soft: Bool = false) {
             guard let app = self.app else { return }
@@ -535,9 +539,10 @@ extension Ghostty {
                 pwdChanged(app, target: target, v: action.action.pwd)
 
             case GHOSTTY_ACTION_OPEN_CONFIG:
-                // TODO: Temp hack to make testing quicker
-                // openConfig();
-                SettingsController.shared.show()
+                openConfig()
+
+            case GHOSTTY_ACTION_OPEN_PREFERENCES:
+                openPreferences()
 
             case GHOSTTY_ACTION_FLOAT_WINDOW:
                 toggleFloatWindow(app, target: target, mode: action.action.float_window)

@@ -919,6 +919,7 @@ typedef enum {
   GHOSTTY_ACTION_SEARCH_TOTAL,
   GHOSTTY_ACTION_SEARCH_SELECTED,
   GHOSTTY_ACTION_READONLY,
+  GHOSTTY_ACTION_OPEN_PREFERENCES,
 } ghostty_action_tag_e;
 
 typedef union {
@@ -1069,6 +1070,7 @@ bool ghostty_app_key(ghostty_app_t, ghostty_input_key_s);
 bool ghostty_app_key_is_binding(ghostty_app_t, ghostty_input_key_s);
 void ghostty_app_keyboard_changed(ghostty_app_t);
 void ghostty_app_open_config(ghostty_app_t);
+void ghostty_app_open_preferences(ghostty_app_t);
 void ghostty_app_update_config(ghostty_app_t, ghostty_config_t);
 bool ghostty_app_needs_confirm_quit(ghostty_app_t);
 bool ghostty_app_has_global_keybinds(ghostty_app_t);

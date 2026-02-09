@@ -661,6 +661,12 @@ pub const Action = union(enum) {
     /// the logs.
     open_config,
 
+    /// Open the GUI preferences/settings panel.
+    ///
+    /// On platforms without a GUI preferences panel, this falls back to
+    /// opening the configuration file (same as `open_config`).
+    open_preferences,
+
     /// Reload the configuration.
     ///
     /// The exact meaning depends on the app runtime in use, but this usually
@@ -1290,6 +1296,7 @@ pub const Action = union(enum) {
 
             // Obviously app actions.
             .open_config,
+            .open_preferences,
             .reload_config,
             .close_all_windows,
             .quit,

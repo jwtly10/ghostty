@@ -330,6 +330,10 @@ pub const Action = union(Key) {
     /// The readonly state of the surface has changed.
     readonly: Readonly,
 
+    /// Open the Ghostty preferences/settings UI. On platforms without
+    /// a dedicated preferences panel, this falls back to open_config.
+    open_preferences,
+
     /// Sync with: ghostty_action_tag_e
     pub const Key = enum(c_int) {
         quit,
@@ -395,6 +399,7 @@ pub const Action = union(Key) {
         search_total,
         search_selected,
         readonly,
+        open_preferences,
     };
 
     /// Sync with: ghostty_action_u

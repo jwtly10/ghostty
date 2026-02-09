@@ -567,6 +567,12 @@ fn actionCommands(action: Action.Key) []const Command {
             .description = "Open the config file.",
         }},
 
+        .open_preferences => comptime &.{.{
+            .action = .open_preferences,
+            .title = "Open Preferences",
+            .description = "Open the preferences panel.",
+        }},
+
         .reload_config => comptime &.{.{
             .action = .reload_config,
             .title = "Reload Config",

@@ -691,6 +691,7 @@ pub const Application = extern struct {
             ),
 
             .open_config => return Action.openConfig(self),
+            .open_preferences => return Action.openConfig(self),
 
             .open_url => Action.openUrl(self, value),
 

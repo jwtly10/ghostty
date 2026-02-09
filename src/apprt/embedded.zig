@@ -1470,6 +1470,14 @@ pub const CAPI = struct {
         };
     }
 
+    /// Open the preferences/settings UI.
+    export fn ghostty_app_open_preferences(v: *App) void {
+        _ = v.performAction(.app, .open_preferences, {}) catch |err| {
+            log.err("error opening preferences err={}", .{err});
+            return;
+        };
+    }
+
     /// Update the configuration to the provided config. This will propagate
     /// to all surfaces as well.
     export fn ghostty_app_update_config(
