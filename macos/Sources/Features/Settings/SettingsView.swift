@@ -207,6 +207,16 @@ class ConfigMetadataViewModel: ObservableObject {
         values[key] = SettingsStore.readValue(from: config, key: key)
     }
 
+    func resetAll() {
+        store.removeAll()
+        modifiedKeys.removeAll()
+        pendingChanges.removeAll()
+        isApplyingChanges = true
+        reloadConfig()
+        isApplyingChanges = false
+        loadCurrentValues()
+    }
+
     private func reloadConfig() {
         guard let delegate = NSApplication.shared.delegate as? AppDelegate else { return }
         Self.isReloadingFromGUI = true
@@ -565,6 +575,23 @@ struct ConfigItemRow: View {
         .contentShape(Rectangle())
         .onHover { hovering in
             isHovering = hovering
+        }
+        .contextMenu {
+            if isModified {
+                Button("Reset to Default") {
+                    onReset()
+                }
+            }
+
+            Button("Copy Name") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(item.name, forType: .string)
+            }
+
+            Button("Copy Value") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(value, forType: .string)
+            }
         }
     }
 
